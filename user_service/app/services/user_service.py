@@ -31,3 +31,15 @@ class UserService:
         self, session: AsyncSession, first_name: str, last_name: str
     ) -> List[User]:
         return await self.repo.find_by_name(session, first_name, last_name)
+
+    async def update_user_by_login(
+        self,
+        session: AsyncSession,
+        login: str,
+        full_name: Optional[str] = None,
+    ) -> Optional[User]:
+        user = await self.repo.get_by_login(session, login)
+        if not user:
+            return None
+
+        return await self.repo.update_user(session, user, full_name)
