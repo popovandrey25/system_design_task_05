@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
 from app.repositories.user_repository import UserRepository
+from app.services.cache_service import UserCacheService
 
 
 class UserService:
@@ -22,15 +23,32 @@ class UserService:
         if existing:
             raise ValueError(f"Login '{login}' is already taken")
 
-        return await self.repo.create_user(session, login, password, first_name, last_name)
+        user = await self.repo.create_user(session, login, password, first_name, last_name)
+        await UserCacheService.set_user_by_login(user)
+        return user
 
     async def get_user_by_login(self, session: AsyncSession, login: str) -> Optional[User]:
-        return await self.repo.get_by_login(session, login)
+        cached = await UserCacheService.get_user_by_login(login)
+        if cached:
+            return User(**cached)
+
+        user = await self.repo.get_by_login(session, login)
+        if user:
+            await UserCacheService.set_user_by_login(user)
+        return user
 
     async def find_users_by_name(
         self, session: AsyncSession, first_name: str, last_name: str
     ) -> List[User]:
-        return await self.repo.find_by_name(session, first_name, last_name)
+        cached = await UserCacheService.get_search_users(first_name, last_name)
+        if cached:
+            return [User(**u) for u in cached]
+
+        users = await self.repo.find_by_name(session, first_name, last_name)
+        if users:
+            users_data = [{"id": u.id, "full_name": u.full_name, "login": u.login} for u in users]
+            await UserCacheService.set_search_users(first_name, last_name, users_data)
+        return users
 
     async def update_user_by_login(
         self,
@@ -42,4 +60,6 @@ class UserService:
         if not user:
             return None
 
-        return await self.repo.update_user(session, user, full_name)
+        updated_user = await self.repo.update_user(session, user, full_name)
+        await UserCacheService.set_user_by_login(updated_user)
+        return updated_user
